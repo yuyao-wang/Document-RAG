@@ -1,0 +1,3 @@
+Project Orion is an internal knowledge assistant focused on source-grounded Q&A.
+It retrieves relevant chunks from internal docs and answers with citations.
+The v1 scope uses plain text ingestion before adding OCR and document parsing.
