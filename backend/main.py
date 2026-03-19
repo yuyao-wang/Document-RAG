@@ -12,18 +12,14 @@ def main() -> int:
         question = "What is Project Orion?"
 
     graph = build_graph()
-    result = graph.invoke({"question": question})
+    result = graph.invoke(
+        {"question": question, "attempt": 0, "messages": [], "query": question}
+    )
 
     output = {
+        "query": result.get("query", question),
         "answer": result.get("answer", ""),
-        "citations": [
-            {
-                "source": d.source,
-                "chunk_id": d.chunk_id,
-                "score": d.score,
-            }
-            for d in result.get("docs", [])
-        ],
+        "citations": result.get("citations", []),
     }
 
     print(json.dumps(output, ensure_ascii=True, indent=2))

@@ -1,0 +1,6 @@
+Ingestion plan for v1:
+1) Accept txt files only.
+2) Chunk into fixed-size segments.
+3) Compute embeddings and store in a vector index.
+4) Save minimal metadata for citations.
+Later versions will add PDF/DOCX parsing and OCR for scanned files.

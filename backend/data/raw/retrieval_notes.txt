@@ -1,0 +1,4 @@
+Retrieval notes:
+- Keyword overlap is acceptable for a stub retriever.
+- Vector search will improve recall for paraphrased queries.
+- The graph may re-retrieve if the context is insufficient.
