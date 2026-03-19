@@ -440,30 +440,6 @@ Keep communication contracts simple and explicit through JSON APIs.
 
 ---
 
-## 10. Immediate next step
-
-The immediate next build step should be:
-
-### Step 1
-
-Create backend skeleton and define these endpoints:
-
-* `GET /api/health`
-* `POST /api/ingest/text`
-* `POST /api/ask`
-
-### Step 2
-
-Create a simple LangGraph-based RAG flow using txt documents only.
-
-### Step 3
-
-Confirm the response contract between frontend and backend.
-
-Only after that should document parsing / OCR be added.
-
----
-
-## 11. One-sentence summary
+## 10. One-sentence summary
 
 Build a stable web architecture first, put LangGraph-based RAG at the center, use txt documents as placeholders, and treat parsing/OCR/database as modular upgrades rather than blockers.

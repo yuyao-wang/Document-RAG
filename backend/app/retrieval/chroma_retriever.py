@@ -84,6 +84,11 @@ def _index_corpus(corpus_dir: Path, collection) -> None:
         )
 
 
+def reset_index() -> None:
+    global _INDEXED
+    _INDEXED = False
+
+
 def retrieve_docs(
     query: str,
     corpus_dir: str | Path,
