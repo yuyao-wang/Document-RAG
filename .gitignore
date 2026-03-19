@@ -1,0 +1,6 @@
+frontend/node_modules/
+frontend/.next/
+backend/__pycache__/
+backend/app/llm/__pycache__/
+backend/data/vectorstore/chroma/
+*.pyc

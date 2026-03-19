@@ -14,6 +14,7 @@ from app.retrieval.chroma_retriever import RetrievedChunk
 
 SYSTEM_PROMPT = (
     "You are a helpful assistant. Use the provided context to answer. "
+    "Do not copy raw context or metadata into the answer. "
     "If the context is insufficient, say so plainly."
 )
 DEFAULT_MODEL = "claude-sonnet-4-20250514"
@@ -40,12 +41,26 @@ def generate_answer(question: str, docs: List[RetrievedChunk]) -> str:
     context = _format_context(docs)
 
     if not api_key or Anthropic is None:
-        if not context:
+        if not docs:
             return "I do not have enough context to answer that yet."
-        return (
-            "(stub) Based on the context, here is a grounded answer:\n"
-            f"Question: {question}\n\nContext:\n{context}"
-        )
+        bullets: List[str] = []
+        for doc in docs:
+            text = " ".join(doc.text.strip().split())
+            if not text:
+                continue
+            sentence_end = min(
+                [idx for idx in (text.find("."), text.find("!"), text.find("?")) if idx != -1]
+                or [min(len(text), 240) - 1]
+            )
+            snippet = text[: sentence_end + 1].strip()
+            if len(snippet) < 8:
+                snippet = text[:240].strip()
+            bullets.append(snippet)
+            if len(bullets) >= 3:
+                break
+        if not bullets:
+            return "I found relevant sources, but couldn't extract a clean summary."
+        return "Based on retrieved sources:\n- " + "\n- ".join(bullets)
 
     client = Anthropic(api_key=api_key)
     model = os.getenv("ANTHROPIC_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
