@@ -77,6 +77,32 @@ export default function Page() {
         </p>
       </section>
 
+      <section className="chat">
+        {messages.length === 0 ? (
+          <div className="status">No messages yet. Try asking a question.</div>
+        ) : null}
+        {messages.map((message, index) => (
+          <article
+            key={`${message.role}-${index}`}
+            className={`message ${message.role}`}
+          >
+            <span className="label">
+              {message.role === "user" ? "User" : "Assistant"}
+            </span>
+            <div className="message-body">{message.content}</div>
+            {message.citations && message.citations.length > 0 ? (
+              <div className="citations">
+                {message.citations.map((citation, idx) => (
+                  <div key={`${citation.source}-${idx}`} className="citation">
+                    {citation.source} · {citation.chunk_id}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </article>
+        ))}
+      </section>
+
       <section className="panel">
         <div className="form">
           <textarea
@@ -103,32 +129,6 @@ export default function Page() {
             <div className="status">Retrieving context and drafting an answer...</div>
           ) : null}
         </div>
-      </section>
-
-      <section className="chat">
-        {messages.length === 0 ? (
-          <div className="status">No messages yet. Try asking a question.</div>
-        ) : null}
-        {messages.map((message, index) => (
-          <article
-            key={`${message.role}-${index}`}
-            className={`message ${message.role}`}
-          >
-            <span className="label">
-              {message.role === "user" ? "User" : "Assistant"}
-            </span>
-            <div className="message-body">{message.content}</div>
-            {message.citations && message.citations.length > 0 ? (
-              <div className="citations">
-                {message.citations.map((citation, idx) => (
-                  <div key={`${citation.source}-${idx}`} className="citation">
-                    {citation.source} · {citation.chunk_id}
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </article>
-        ))}
       </section>
     </main>
   );

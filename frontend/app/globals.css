@@ -30,9 +30,12 @@ body {
 main {
   max-width: 960px;
   margin: 0 auto;
-  padding: 56px 24px 80px;
+  padding: 56px 24px 40px;
+  min-height: 100vh;
   display: grid;
-  gap: 32px;
+  grid-template-rows: auto 1fr auto;
+  gap: 28px;
+  overflow: hidden;
 }
 
 .header {
@@ -124,6 +127,9 @@ main {
 .chat {
   display: grid;
   gap: 18px;
+  overflow-y: auto;
+  padding-right: 6px;
+  min-height: 0;
 }
 
 .message {
