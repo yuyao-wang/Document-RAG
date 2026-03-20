@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from app.graph import build_graph
+from app.llm.claude import has_llm_config
 from app.retrieval.chroma_retriever import reset_index
 
 RAW_DIR = Path(__file__).resolve().parent / "data" / "raw"
@@ -39,6 +40,7 @@ class AskResponse(BaseModel):
     query: str
     answer: str
     citations: list[dict]
+    llm_mode: str
 
 
 class IngestTextRequest(BaseModel):
@@ -106,10 +108,12 @@ def ask(request: AskRequest) -> AskResponse:
         {"question": question, "attempt": 0, "messages": [], "query": question}
     )
 
+    llm_mode = "claude" if has_llm_config() else "stub"
     return AskResponse(
         query=result.get("query", question),
         answer=result.get("answer", ""),
         citations=result.get("citations", []),
+        llm_mode=llm_mode,
     )
 
 

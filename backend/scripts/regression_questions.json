@@ -1,0 +1,18 @@
+[
+  {
+    "id": "orion_overview",
+    "question": "What is Project Orion?"
+  },
+  {
+    "id": "v1_scope",
+    "question": "What are the v1 goals and non-goals for Project Orion?"
+  },
+  {
+    "id": "ingestion_plan",
+    "question": "Summarize the ingestion plan for v1."
+  },
+  {
+    "id": "architecture",
+    "question": "What is the target architecture described in the docs?"
+  }
+]

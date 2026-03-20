@@ -12,6 +12,13 @@ from app.llm.claude import (
 )
 
 
+def _format_context_for_llm(docs) -> str:
+    blocks = []
+    for d in docs:
+        blocks.append(f"[source: {d.source} | chunk: {d.chunk_id}]\n{d.text}")
+    return "\n\n".join(blocks)
+
+
 def rewrite_node(state: RAGState) -> RAGState:
     question = state["question"]
     rewritten = rewrite_query(question)
@@ -27,6 +34,14 @@ def agent_node(state: RAGState) -> RAGState:
     if not messages:
         messages = [{"role": "user", "content": query}]
 
+    if not docs and state.get("attempt", 0) == 0:
+        return {
+            **state,
+            "messages": messages,
+            "next_action": "tool",
+            "tool_input": {"query": query, "top_k": 4},
+        }
+
     if not has_llm_config():
         if not docs:
             return {
@@ -37,6 +52,31 @@ def agent_node(state: RAGState) -> RAGState:
             }
         answer = generate_answer(question, docs)
         return {**state, "messages": messages, "next_action": "final", "answer": answer}
+
+    # If we already retrieved docs (prefetch), inject context for the LLM.
+    if docs:
+        has_tool_result = False
+        for m in messages:
+            content = m.get("content")
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "tool_result":
+                        has_tool_result = True
+                        break
+            if has_tool_result:
+                break
+        has_context_msg = any(
+            isinstance(m.get("content"), str) and m["content"].startswith("Context:\n")
+            for m in messages
+        )
+        if not has_tool_result and not has_context_msg:
+            context_msg = (
+                "Use only the following context to answer. If there are multiple meanings, "
+                "answer only the meaning supported by the context and do not mention other meanings. "
+                "If the context is insufficient, say so plainly.\n\n"
+                "Context:\n" + _format_context_for_llm(docs)
+            )
+            messages = messages + [{"role": "user", "content": context_msg}]
 
     response = call_llm_with_tools(messages=messages, tools=[RETRIEVE_DOCS_TOOL])
     content = response.content
@@ -69,11 +109,18 @@ def agent_node(state: RAGState) -> RAGState:
         if block_type == "text":
             answer_text += getattr(block, "text", None) or block.get("text", "")
 
+    answer_text = answer_text.strip()
+    if not answer_text:
+        if docs:
+            answer_text = generate_answer(question, docs)
+        else:
+            answer_text = "I do not have enough context to answer that yet."
+
     return {
         **state,
         "messages": messages,
         "next_action": "final",
-        "answer": answer_text.strip(),
+        "answer": answer_text,
     }
 
 
@@ -86,7 +133,7 @@ def tools_node(state: RAGState) -> RAGState:
 
     messages = state.get("messages", [])
     tool_use_id = tool_input.get("tool_use_id")
-    if tool_use_id:
+    if tool_use_id and tool_use_id != "prefetch":
         tool_payload = [
             {
                 "source": d.source,

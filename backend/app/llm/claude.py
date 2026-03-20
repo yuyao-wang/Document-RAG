@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import json
 from typing import List
+import re
 
 try:
     from anthropic import Anthropic
@@ -13,11 +14,38 @@ from app.retrieval.chroma_retriever import RetrievedChunk
 
 
 SYSTEM_PROMPT = (
-    "You are a helpful assistant. Use the provided context to answer. "
+    "You are a helpful assistant. Use only the provided context to answer. "
+    "Do not use outside knowledge or assumptions. "
     "Do not copy raw context or metadata into the answer. "
     "If the context is insufficient, say so plainly."
 )
 DEFAULT_MODEL = "claude-sonnet-4-20250514"
+
+
+
+def _tokenize(text: str) -> list[str]:
+    cleaned = []
+    for ch in text.lower():
+        if ch.isalnum() or ch.isspace():
+            cleaned.append(ch)
+        else:
+            cleaned.append(" ")
+    return [t for t in "".join(cleaned).split() if t]
+
+
+def _best_sentence(question: str, passage: str) -> str:
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", passage) if s.strip()]
+    if not sentences:
+        return passage.strip()
+    q_tokens = set(_tokenize(question))
+    if not q_tokens:
+        return sentences[0]
+    best = (0, sentences[0])
+    for s in sentences:
+        score = len(q_tokens.intersection(_tokenize(s)))
+        if score > best[0]:
+            best = (score, s)
+    return best[1]
 
 
 def _format_context(docs: List[RetrievedChunk]) -> str:
@@ -44,17 +72,19 @@ def generate_answer(question: str, docs: List[RetrievedChunk]) -> str:
         if not docs:
             return "I do not have enough context to answer that yet."
         bullets: List[str] = []
+        seen = set()
         for doc in docs:
-            text = " ".join(doc.text.strip().split())
-            if not text:
+            passage = " ".join(doc.text.strip().split())
+            if not passage:
                 continue
-            sentence_end = min(
-                [idx for idx in (text.find("."), text.find("!"), text.find("?")) if idx != -1]
-                or [min(len(text), 240) - 1]
-            )
-            snippet = text[: sentence_end + 1].strip()
+            snippet = _best_sentence(question, passage)
+            snippet = snippet.strip()
             if len(snippet) < 8:
-                snippet = text[:240].strip()
+                snippet = passage[:240].strip()
+            key = snippet.lower()
+            if key in seen:
+                continue
+            seen.add(key)
             bullets.append(snippet)
             if len(bullets) >= 3:
                 break
@@ -95,7 +125,7 @@ def call_llm_with_tools(messages: List[dict], tools: List[dict]):
         system=SYSTEM_PROMPT,
         messages=messages,
         tools=tools,
-        tool_choice="auto",
+        tool_choice={"type": "auto"},
     )
 
 
