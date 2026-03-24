@@ -21,7 +21,48 @@ The first version does not prioritize:
 
 ---
 
-## 2. What Is Implemented Now
+## 2. Internal Material Database Construction Strategy
+
+The system must handle very large and noisy document sets. The key constraints are:
+
+- LLMs cannot read the full corpus due to token limits.
+- Filenames are not reliable summaries of content.
+- We need an LLM-generated summary for each document to enable fast routing.
+
+**Summary-first retrieval (two-stage)**
+
+1. **Summary index**: generate a doc-level summary (50–150 words) for every document and embed it.
+2. **Stage A retrieval**: query the summary index to select candidate documents.
+3. **Stage B retrieval**: run chunk-level retrieval only inside the selected documents.
+
+This keeps token usage low and avoids blind full-corpus search.
+
+**Summary generation**
+
+- Generated at ingestion time (async for large batches)
+- Stored with metadata and versioned (e.g. `summary_v1`, `summary_v2`)
+
+**OCR strategy: trigger + dual OCR verification**
+
+OCR should run only when text extraction is insufficient or unreliable.
+
+**Trigger rules**
+
+- Text extraction is empty or nearly empty
+- Readability is low (e.g. alnum ratio below threshold)
+- Key numeric formats fail validation (dates, amounts, IDs)
+
+**Dual OCR verification**
+
+- Primary OCR: MinerU (batch, consistent, traceable)
+- Fallback OCR: LLM OCR (only when MinerU output is low quality or for verification)
+- If the two OCR results disagree on key numeric fields, mark the document for re-run or review
+
+This keeps OCR usage minimal while improving reliability on scanned/dirty documents.
+
+---
+
+## 3. What Is Implemented Now
 
 **End-to-end**
 
@@ -121,9 +162,10 @@ RetrievedChunk {
 - Store embeddings
 - Retrieve top-k chunks
 
-**Metadata DB (v1 temporary)**
+**Metadata DB (SQLite, temporary)**
 
-- JSON metadata file at `backend/data/metadata.json`
+- Metadata stored in `backend/data/metadata.db`
+- JSON migration supported from `backend/data/metadata.json`
 
 **LLM Layer**
 
@@ -132,7 +174,7 @@ RetrievedChunk {
 
 ---
 
-## 3. Target Architecture
+## 4. Target Architecture
 
 ```text
 [Frontend: Next.js / React]
@@ -164,7 +206,7 @@ RetrievedChunk {
 
 ---
 
-## 4. Frontend and Backend
+## 5. Frontend and Backend
 
 **Frontend (Next.js)**
 
@@ -181,7 +223,7 @@ RetrievedChunk {
 
 ---
 
-## 5. Tech Stack
+## 6. Tech Stack
 
 - Frontend: Next.js 14, React 18, TypeScript
 - Backend: FastAPI, Pydantic
@@ -189,11 +231,11 @@ RetrievedChunk {
 - Vector store: Chroma
 - Embeddings: Sentence-Transformers (`all-MiniLM-L6-v2`)
 - LLM: Anthropic Claude (optional; stub mode if not configured)
-- Local data: txt corpus + JSON metadata
+- Local data: txt corpus + SQLite metadata
 
 ---
 
-## 6. Demo
+## 7. Demo
 
 **Chat**
 
