@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import hashlib
 import json
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -16,7 +17,8 @@ from app.llm.claude import has_llm_config
 from app.retrieval.chroma_retriever import reset_index
 
 RAW_DIR = Path(__file__).resolve().parent / "data" / "raw"
-METADATA_PATH = Path(__file__).resolve().parent / "data" / "metadata.json"
+METADATA_JSON_PATH = Path(__file__).resolve().parent / "data" / "metadata.json"
+METADATA_DB_PATH = Path(__file__).resolve().parent / "data" / "metadata.db"
 
 app = FastAPI(title="Document RAG API", version="0.1.0")
 app.add_middleware(
@@ -70,26 +72,113 @@ class DocumentsResponse(BaseModel):
 
 
 
-def _load_metadata() -> dict:
-    if not METADATA_PATH.exists():
-        return {}
-    try:
-        return json.loads(METADATA_PATH.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-
-
-def _save_metadata(data: dict) -> None:
-    METADATA_PATH.parent.mkdir(parents=True, exist_ok=True)
-    METADATA_PATH.write_text(json.dumps(data, ensure_ascii=True, indent=2), encoding="utf-8")
-
-
-
 def _to_iso(ts: float) -> str:
     if not ts:
         return ""
     return datetime.utcfromtimestamp(float(ts)).isoformat() + "Z"
 
+
+
+def _get_conn() -> sqlite3.Connection:
+    METADATA_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(METADATA_DB_PATH))
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS documents (
+            source TEXT PRIMARY KEY,
+            size_bytes INTEGER NOT NULL,
+            modified_at TEXT NOT NULL,
+            chunk_count INTEGER NOT NULL,
+            content_hash TEXT NOT NULL,
+            ingested_at TEXT NOT NULL
+        )
+        """
+    )
+    return conn
+
+
+
+def _migrate_json_if_needed(conn: sqlite3.Connection) -> None:
+    if not METADATA_JSON_PATH.exists():
+        return
+    row = conn.execute("SELECT COUNT(*) AS cnt FROM documents").fetchone()
+    if row and row["cnt"]:
+        return
+    try:
+        data = json.loads(METADATA_JSON_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return
+
+    for source, meta in data.items():
+        conn.execute(
+            """
+            INSERT INTO documents (
+                source, size_bytes, modified_at, chunk_count, content_hash, ingested_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(source) DO UPDATE SET
+                size_bytes = excluded.size_bytes,
+                modified_at = excluded.modified_at,
+                chunk_count = excluded.chunk_count,
+                content_hash = excluded.content_hash,
+                ingested_at = excluded.ingested_at
+            """,
+            (
+                source,
+                int(meta.get("size_bytes", 0)),
+                str(meta.get("modified_at", "")),
+                int(meta.get("chunk_count", 0)),
+                str(meta.get("content_hash", "")),
+                str(meta.get("ingested_at", "")),
+            ),
+        )
+    conn.commit()
+
+
+
+def _upsert_metadata(
+    source: str,
+    size_bytes: int,
+    modified_at: str,
+    chunk_count: int,
+    content_hash: str,
+    ingested_at: str,
+) -> None:
+    with _get_conn() as conn:
+        _migrate_json_if_needed(conn)
+        conn.execute(
+            """
+            INSERT INTO documents (
+                source, size_bytes, modified_at, chunk_count, content_hash, ingested_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(source) DO UPDATE SET
+                size_bytes = excluded.size_bytes,
+                modified_at = excluded.modified_at,
+                chunk_count = excluded.chunk_count,
+                content_hash = excluded.content_hash,
+                ingested_at = excluded.ingested_at
+            """,
+            (source, size_bytes, modified_at, chunk_count, content_hash, ingested_at),
+        )
+        conn.commit()
+
+
+
+def _load_metadata_map() -> dict:
+    with _get_conn() as conn:
+        _migrate_json_if_needed(conn)
+        rows = conn.execute("SELECT * FROM documents").fetchall()
+        return {
+            row["source"]: {
+                "source": row["source"],
+                "size_bytes": row["size_bytes"],
+                "modified_at": row["modified_at"],
+                "chunk_count": row["chunk_count"],
+                "content_hash": row["content_hash"],
+                "ingested_at": row["ingested_at"],
+            }
+            for row in rows
+        }
 
 
 
@@ -138,16 +227,14 @@ def ingest_text(request: IngestTextRequest) -> IngestTextResponse:
     content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
     ingested_at = time.time()
 
-    metadata = _load_metadata()
-    metadata[filename] = {
-        "source": filename,
-        "size_bytes": file_path.stat().st_size,
-        "modified_at": _to_iso(file_path.stat().st_mtime),
-        "chunk_count": chunks,
-        "content_hash": content_hash,
-        "ingested_at": _to_iso(ingested_at),
-    }
-    _save_metadata(metadata)
+    _upsert_metadata(
+        source=filename,
+        size_bytes=file_path.stat().st_size,
+        modified_at=_to_iso(file_path.stat().st_mtime),
+        chunk_count=chunks,
+        content_hash=content_hash,
+        ingested_at=_to_iso(ingested_at),
+    )
 
     reset_index()
 
@@ -157,7 +244,7 @@ def ingest_text(request: IngestTextRequest) -> IngestTextResponse:
 @app.get("/api/documents", response_model=DocumentsResponse)
 def list_documents() -> DocumentsResponse:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-    metadata = _load_metadata()
+    metadata = _load_metadata_map()
     documents: list[DocumentItem] = []
     for path in sorted(RAW_DIR.glob("*.txt")):
         if not path.is_file():
